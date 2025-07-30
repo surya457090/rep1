@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vote Now</title>
+</head>
+<body>
+    <h2>Welcome, {{ name }} ({{ register_no }})</h2>
+    <form method="POST">
+        <p>Select your candidate:</p>
+        <input type="radio" name="surya" value="rxsurya" required> surya<br>
+        <input type="radio" name="vaishnavi" value="vaishu"> vaishnavi<br>
+        <input type="radio" name="umaaa" value="shankar"> umaaaa<br><br>
+        <input type="submit" value="Submit Vote">
+    </form>
+    <br>
+    <a href="/logout">Logout</a>
+</body>
+</html>
+

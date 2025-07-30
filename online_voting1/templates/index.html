@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Online Voting System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f8ff;
+            text-align: center;
+            padding: 50px;
+        }
+        h1 {
+            color: #333;
+        }
+        .button {
+            display: inline-block;
+            margin: 20px;
+            padding: 15px 30px;
+            font-size: 16px;
+            color: white;
+            background-color: #4CAF50;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .admin-button {
+            background-color: #f44336;
+        }
+        .admin-button:hover {
+            background-color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to the Online Voting System</h1>
+
+    <p>Please log in to vote or view results:</p>
+
+    <!-- Link to user login page -->
+    <a href="/login" class="button">Voter Login</a>
+
+    <!-- Link to admin login page -->
+    <a href="/admin" class="button admin-button">Admin Login</a>
+
+    <br><br>
+    <p style="color: #888;">Made with ❤️ using Flask</p>
+</body>
+</html>
