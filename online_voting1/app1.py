@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, session
 import sqlite3
+import os
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -26,6 +27,10 @@ def init_db():
     )''')
     conn.commit()
     conn.close()
+
+# Only initialize DB if it doesn't exist
+if not os.path.exists('database.db'):
+    init_db()
 
 # Home route
 @app.route('/')
@@ -134,8 +139,4 @@ def admin_results():
     return render_template('admin_results.html', results=results)
 
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True)
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
+    app.run(host='0.0.0.0', port=5000)
