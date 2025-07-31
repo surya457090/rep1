@@ -1,128 +1,116 @@
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, session
+from flask import Flask, render_template, request, redirect, url_for, session, g
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+app.secret_key = os.environ.get('SECRET_KEY', 'dev')  # for session
 
-DATABASE = 'database.db'
+DATABASE = 'voting.db'
 
-# ----------- Admin credentials -----------
-ADMIN_USERNAME = 'admin'
-ADMIN_PASSWORD = 'admin123'
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(DATABASE)
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
-# ----------- Initialize the database -----------
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
 def init_db():
-    with sqlite3.connect(DATABASE) as conn:
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS voters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            email TEXT,
-            register_no TEXT UNIQUE,
-            password TEXT,
-            has_voted INTEGER DEFAULT 0
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS votes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            register_no TEXT,
-            candidate TEXT
-        )''')
-        conn.commit()
+    db = get_db()
+    db.executescript('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        candidate TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    ''')
+    db.commit()
 
-# Run DB initialization every time app starts
-@app.before_first_request
-def initialize():
+@app.before_request
+def before_request():
     init_db()
 
-# ----------- Routes -----------
-
 @app.route('/')
-def home():
-    return render_template('home.html')
+def index():
+    return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        register_no = request.form['register_no']
-        password = request.form['password']
+        username = request.form['username']
+        password = generate_password_hash(request.form['password'])
 
+        db = get_db()
         try:
-            with sqlite3.connect(DATABASE) as conn:
-                c = conn.cursor()
-                c.execute("INSERT INTO voters (name, email, register_no, password) VALUES (?, ?, ?, ?)",
-                          (name, email, register_no, password))
-                conn.commit()
+            db.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
+            db.commit()
+            return redirect(url_for('login'))
         except sqlite3.IntegrityError:
-            return "Register number already exists!"
-        return redirect('/login')
+            return "Username already exists."
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        register_no = request.form['register_no']
-        password = request.form['password']
+        uname = request.form['username']
+        pwd = request.form['password']
 
-        with sqlite3.connect(DATABASE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT * FROM voters WHERE register_no=? AND password=?", (register_no, password))
-            voter = c.fetchone()
+        # Admin login check
+        if uname == os.environ.get('ADMIN_USERNAME') and pwd == os.environ.get('ADMIN_PASSWORD'):
+            session['admin'] = True
+            return redirect(url_for('admin'))
 
-        if voter:
-            session['register_no'] = register_no
-            session['name'] = voter[1]
-            return redirect('/vote')
-        else:
-            return "Invalid credentials"
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE username = ?', (uname,)).fetchone()
+        if user and check_password_hash(user['password'], pwd):
+            session['user_id'] = user['id']
+            return redirect(url_for('vote'))
+        return "Invalid login"
     return render_template('login.html')
 
 @app.route('/vote', methods=['GET', 'POST'])
 def vote():
-    if 'register_no' not in session:
-        return redirect('/login')
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    db = get_db()
+    existing_vote = db.execute('SELECT * FROM votes WHERE user_id = ?', (session['user_id'],)).fetchone()
+    if existing_vote:
+        return "You already voted."
 
     if request.method == 'POST':
         candidate = request.form['candidate']
-        register_no = session['register_no']
+        db.execute('INSERT INTO votes (user_id, candidate) VALUES (?, ?)', (session['user_id'], candidate))
+        db.commit()
+        return "Vote submitted!"
+    return render_template('vote.html')
 
-        with sqlite3.connect(DATABASE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT * FROM votes WHERE register_no=?", (register_no,))
-            if c.fetchone():
-                return "You have already voted!"
-            c.execute("INSERT INTO votes (register_no, candidate) VALUES (?, ?)", (register_no, candidate))
-            conn.commit()
-
-        return "Thanks for voting!"
-
-    return render_template('vote.html', name=session['name'])
-
-@app.route('/admin', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            session['admin'] = True
-            return redirect('/admin/results')
-        else:
-            return "Invalid admin credentials"
-    return render_template('admin_login.html')
-
-@app.route('/admin/results')
-def admin_results():
+@app.route('/admin')
+def admin():
     if not session.get('admin'):
-        return redirect('/admin')
+        return redirect(url_for('login'))
 
-    with sqlite3.connect(DATABASE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT candidate, COUNT(*) FROM votes GROUP BY candidate")
-        results = c.fetchall()
-    return render_template('admin_results.html', results=results)
+    db = get_db()
+    result = db.execute('SELECT candidate, COUNT(*) as count FROM votes GROUP BY candidate').fetchall()
+    return render_template('admin.html', results=result)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True)
+
 
